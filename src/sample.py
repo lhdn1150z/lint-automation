@@ -23,3 +23,4 @@ class Calculator:
     def subtract(self, x):
         self.value=self.value - x
         return self.value
+# test
