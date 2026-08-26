@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+flake8_output.txt
+black_output.txt
+comment.md

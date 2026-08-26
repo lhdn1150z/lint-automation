@@ -1,0 +1,88 @@
+name: Code Quality Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+      - name: Run flake8
+        id: flake8
+        continue-on-error: true
+        run: |
+          flake8 src/ > flake8_output.txt 2>&1 || true
+          echo "exit_code=$(flake8 src/ > /dev/null 2>&1; echo $?)" >> "$GITHUB_OUTPUT"
+          cat flake8_output.txt
+
+      - name: Run black --check
+        id: black
+        continue-on-error: true
+        run: |
+          black --check --diff src/ > black_output.txt 2>&1 || true
+          echo "exit_code=$(black --check src/ > /dev/null 2>&1; echo $?)" >> "$GITHUB_OUTPUT"
+          cat black_output.txt
+
+      - name: Build PR comment body
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "## 🤖 Code Quality Report" > comment.md
+          echo "" >> comment.md
+          if [ "${{ steps.flake8.outputs.exit_code }}" = "0" ]; then
+            echo "✅ **flake8**: no issues found" >> comment.md
+          else
+            echo "⚠️ **flake8**: issues found" >> comment.md
+            echo '```' >> comment.md
+            cat flake8_output.txt >> comment.md
+            echo '```' >> comment.md
+          fi
+          echo "" >> comment.md
+          if [ "${{ steps.black.outputs.exit_code }}" = "0" ]; then
+            echo "✅ **black**: formatting OK" >> comment.md
+          else
+            echo "⚠️ **black**: formatting issues found (run \`black src/\` to fix)" >> comment.md
+            echo '```diff' >> comment.md
+            cat black_output.txt >> comment.md
+            echo '```' >> comment.md
+          fi
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('comment.md', 'utf8');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+      - name: Fail job if lint issues found
+        if: steps.flake8.outputs.exit_code != '0' || steps.black.outputs.exit_code != '0'
+        run: |
+          echo "Lint issues detected — see comment/logs above."
+          exit 1
